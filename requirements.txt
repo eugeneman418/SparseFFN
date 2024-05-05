@@ -2,3 +2,6 @@ transformers
 torch
 numpy
 datasets
+jupyterlab
+accelerate
+wandb
