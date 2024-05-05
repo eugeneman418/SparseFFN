@@ -1,0 +1,5 @@
+setuptools_rust
+transformers
+datasets
+accelerate
+wandb
