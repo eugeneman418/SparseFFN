@@ -1,11 +1,10 @@
 #!/bin/sh
 #
 #SBATCH --job-name="job_name"
-#SBATCH --partition=gpu
+#SBATCH --partition=compute
 #SBATCH --time=01:00:00
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --gpus-per-task=2
+#SBATCH --cpus-per-task=4
 #SBATCH --mem-per-cpu=1G
 #SBATCH --account=Education-EEMCS-Courses-CSE3000
 
