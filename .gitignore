@@ -4,3 +4,4 @@ venv
 wandb_key.txt
 data
 wandb
+**/__pycache__/

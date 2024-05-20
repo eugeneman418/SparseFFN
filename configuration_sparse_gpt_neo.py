@@ -6,12 +6,8 @@ from transformers import PreTrainedTokenizer, TensorType, is_torch_available
 from transformers.configuration_utils import PretrainedConfig
 from transformers.onnx import OnnxConfigWithPast
 from transformers.utils import logging
-from enum import Enum
+from sparse_ffn.sparsity_types import SparsityType
 
-class SparsityType(Enum):
-    MOE = 1
-    CNT = 2
-    PKM = 3
 
 logger = logging.get_logger(__name__)
 

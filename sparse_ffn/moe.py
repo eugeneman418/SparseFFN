@@ -72,8 +72,10 @@ class MoE(nn.Module):
         self.top_k = top_k
         self.gating = GatingNetwork(dim_in, num_experts, top_k)
         self.experts = Experts(dim_in, dim_hidden, num_experts)
+        self.utilization_loss = 0 # REMEMBER TO CLEAR THIS AFTER EACH WEIGHT UPDATE!!!
     def forward(self, x):
         weights, loss = self.gating(x)
+        self.utilization_loss += loss
         expert_results = self.experts(x)
-        return torch.einsum('bcn,bcnd->bcd', weights, expert_results), loss
+        return torch.einsum('bcn,bcnd->bcd', weights, expert_results)
         # this implementation probably activates all the parameters, so no computational speed up. But that's not important for this RQ

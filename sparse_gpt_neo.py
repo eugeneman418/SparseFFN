@@ -29,7 +29,8 @@ from transformers.utils import (
 )
 from transformers.models.gpt_neo.modeling_gpt_neo import GPTNeoSelfAttention, GPTNeoAttention
 
-from configuration_sparse_gpt_neo import SparseGPTNeoConfig, SparsityType
+from configuration_sparse_gpt_neo import SparseGPTNeoConfig
+from sparse_ffn.sparsity_types import SparsityType
 from sparse_ffn.controller import ControllerFFN
 from sparse_ffn.moe import MoE
 from sparse_ffn.pkm import PKM
@@ -63,6 +64,21 @@ def _get_unpad_data(attention_mask):
         max_seqlen_in_batch,
     )
 
+class SparseFFN(nn.Module):
+    def __init__(self, config):
+        super(SparseFFN, self).__init__()
+        self.sparsity_type = config.sparsity_type
+        if config.sparsity_type == SparsityType.MOE:
+            self.implementation = MoE(dim_in=config.hidden_size, dim_hidden=config.intermediate_size, num_experts=config.num_experts, top_k=config.topk)
+        elif config.sparsity_type == SparsityType.CNT:
+            self.implementation = ControllerFFN(dim_in=config.hidden_size, dim_hidden=config.intermediate_size, dim_lowrank=config.dim_lowrank, num_blocks=config.num_blocks)
+        elif config.sparsity_type == SparsityType.PKM:
+            self.implementation = PKM(dim_in=config.hidden_size, dim_hidden=config.intermediate_size, num_subkeys=config.num_subkeys, top_k=config.topk, num_heads=config.num_query_heads)
+        else:
+            raise Exception("sparsity type not implemented")
+    def forward(self, x):
+        return self.implementation(x)
+
 class SparseGPTNeoBlock(nn.Module):
     def __init__(self, config, layer_id):
         super().__init__()
@@ -71,12 +87,8 @@ class SparseGPTNeoBlock(nn.Module):
         self.ln_1 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
         self.attn = GPTNeoAttention(config, layer_id)
         self.ln_2 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
-        if config.sparsity_type == SparsityType.MOE:
-            self.mlp = MoE(dim_in=hidden_size, dim_hidden=config.intermediate_size, num_experts=config.num_experts, top_k=config.topk)
-        elif config.sparsity_type == SparsityType.CNT:
-            self.mlp = ControllerFFN(dim_in=hidden_size, dim_hidden=config.intermediate_size, dim_lowrank=config.dim_lowrank, num_blocks=config.num_blocks)
-        elif config.sparsity_type == SparsityType.PKM:
-            self.mlp = PKM(dim_in=hidden_size, dim_hidden=config.intermediate_size, num_subkeys=config.num_subkeys, top_k=config.topk, num_heads=config.num_query_heads)
+
+        self.mlp = SparseFFN(config)
     def forward(
         self,
         hidden_states,
@@ -245,6 +257,7 @@ class SparseGPTNeoModel(SparseGPTNeoPreTrainedModel):
         self.drop = nn.Dropout(float(config.embed_dropout))
         self.h = nn.ModuleList([SparseGPTNeoBlock(config, layer_id=i) for i in range(config.num_layers)])
         self.ln_f = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
+        
 
         self.gradient_checkpointing = False
         # Initialize weights and apply final processing
@@ -513,8 +526,15 @@ class SparseGPTNeoForCausalLM(SparseGPTNeoPreTrainedModel):
             loss_fct = CrossEntropyLoss()
             loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
 
+            for block in self.transformer.h:
+                if block.mlp.sparsity_type == SparsityType.MOE:
+                    print(block.mlp.utilization_loss)
+                    loss += block.mlp.implementation.utilization_loss
+                    block.mlp.utilization_loss = 0
+
             lm_logits = lm_logits.to(hidden_states.dtype)
             loss = loss.to(hidden_states.dtype)
+
 
         if not return_dict:
             output = (lm_logits,) + transformer_outputs[1:]
